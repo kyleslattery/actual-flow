@@ -175,6 +175,58 @@ export class ActualBudgetClient {
     }
   }
 
+  // Reconcile an account to targetBalanceCents by creating or updating a
+  // single dated adjustment transaction. Returns the adjustment amount applied
+  // (in cents), or null if no adjustment was needed.
+  async reconcileAccountBalance(
+    accountId: string,
+    targetBalanceCents: number,
+    date: string
+  ): Promise<number | null> {
+    if (!this.connected) {
+      await this.connect();
+    }
+
+    const importedId = `balance-adj-${accountId}-${date}`;
+
+    // Find any existing same-day adjustment so we can exclude it from the
+    // real balance calculation (avoids compounding errors on re-runs)
+    const todayTransactions = await actualAPI.getTransactions(accountId, date, date);
+    const existingAdj = todayTransactions.find((t: any) => t.imported_id === importedId);
+    const existingAdjAmount: number = existingAdj ? existingAdj.amount : 0;
+
+    // Real balance = total balance minus any existing same-day adjustment
+    const totalBalance: number = (await actualAPI.getAccountBalance(accountId)) ?? 0;
+    const realBalanceCents = totalBalance - existingAdjAmount;
+
+    const newAdjAmount = targetBalanceCents - realBalanceCents;
+
+    if (Math.abs(newAdjAmount) < 1) {
+      // Balance already correct — clean up a stale zero-adj if present
+      if (existingAdj) {
+        await actualAPI.deleteTransaction(existingAdj.id);
+      }
+      return null;
+    }
+
+    if (existingAdj) {
+      await actualAPI.updateTransaction(existingAdj.id, { amount: newAdjAmount });
+    } else {
+      await actualAPI.importTransactions(accountId, [{
+        date,
+        amount: newAdjAmount,
+        imported_payee: 'Balance Adjustment',
+        payee_name: 'Balance Adjustment',
+        account: accountId,
+        cleared: true,
+        notes: 'Auto-generated balance adjustment',
+        imported_id: importedId,
+      }]);
+    }
+
+    return newAdjAmount;
+  }
+
   async listAvailableBudgets(): Promise<{ id: string; name: string }[]> {
     try {
       // Ensure data directory exists

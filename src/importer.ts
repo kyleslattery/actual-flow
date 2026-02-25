@@ -150,7 +150,7 @@ export class LunchFlowImporter {
       // Fetch transactions from all mapped accounts
       const allLfTransactions: LunchFlowTransaction[] = [];
       const accountResults: { account: string; postedCount: number; pendingCount: number; success: boolean }[] = [];
-      
+
       for (const mapping of this.config.accountMappings) {
         try {
           const accountTransactions = await this.lfClient.getTransactions(
@@ -289,7 +289,9 @@ export class LunchFlowImporter {
 
       const accountCount = new Set(cleanTransactions.map(t => t.account)).size;
       this.ui.showSuccess(`Successfully imported ${cleanTransactions.length} transactions across ${accountCount} account(s)`);
-      
+
+      await this.reconcileBalances(this.config.accountMappings);
+
       // Show duplicate summary if any were found
       if (this.config.actualBudget.duplicateCheckingAcrossAccounts) {
         const duplicateCount = abTransactions.length - uniqueTransactions.length;
@@ -304,6 +306,67 @@ export class LunchFlowImporter {
       if (throwOnError) {
         throw error;
       }
+    }
+  }
+
+  private async reconcileBalances(mappings: AccountMapping[]): Promise<void> {
+    const reconcileMappings = mappings.filter(m => m.reconcileBalance);
+    if (reconcileMappings.length === 0) return;
+
+    const reconcileSpinner = this.ui.showSpinner('Reconciling account balances...');
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const results: { account: string; adjusted: boolean; amount?: number }[] = [];
+
+      for (const mapping of reconcileMappings) {
+        const lfBalance = await this.lfClient.getAccountBalance(mapping.lunchFlowAccountId);
+
+        if (lfBalance === null) {
+          this.ui.showWarning(`No balance data from Lunch Flow for ${mapping.lunchFlowAccountName}, skipping reconciliation`);
+          continue;
+        }
+
+        const lfBalanceCents = Math.round(lfBalance * 100);
+        const adjAmount = await this.abClient.reconcileAccountBalance(
+          mapping.actualBudgetAccountId,
+          lfBalanceCents,
+          today
+        );
+
+        if (adjAmount === null) {
+          results.push({ account: mapping.actualBudgetAccountName, adjusted: false });
+        } else {
+          results.push({ account: mapping.actualBudgetAccountName, adjusted: true, amount: adjAmount });
+        }
+      }
+
+      reconcileSpinner.stop();
+
+      if (results.length > 0) {
+        console.log('\n📊 Balance Reconciliation Summary:');
+        const table = new Table({
+          head: ['Account', 'Adjustment'],
+          colWidths: [30, 20],
+        });
+
+        results.forEach(result => {
+          if (result.adjusted && result.amount !== undefined) {
+            const dollars = result.amount / 100;
+            const amountStr = dollars >= 0
+              ? chalk.green(`+$${dollars.toFixed(2)}`)
+              : chalk.red(`-$${Math.abs(dollars).toFixed(2)}`);
+            table.push([result.account, amountStr]);
+          } else {
+            table.push([result.account, chalk.gray('No adjustment')]);
+          }
+        });
+
+        console.log(table.toString());
+      }
+    } catch (error) {
+      reconcileSpinner.stop();
+      this.ui.showWarning('Balance reconciliation failed');
+      console.warn('Reconciliation error:', error);
     }
   }
 
