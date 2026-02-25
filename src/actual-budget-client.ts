@@ -175,6 +175,14 @@ export class ActualBudgetClient {
     }
   }
 
+  async getAccountBalanceCents(accountId: string): Promise<number> {
+    if (!this.connected) {
+      await this.connect();
+    }
+    const balance = await actualAPI.getAccountBalance(accountId);
+    return balance ?? 0;
+  }
+
   async addBalanceAdjustment(
     accountId: string,
     adjustmentAmountCents: number,

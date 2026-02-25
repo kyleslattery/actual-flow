@@ -147,9 +147,6 @@ export class LunchFlowImporter {
     const spinner = this.ui.showSpinner('Fetching transactions from all mapped accounts...');
 
     try {
-      // Fetch LF accounts once (needed for balance reconciliation)
-      const lfAccounts = await this.lfClient.getAccounts();
-
       // Fetch transactions from all mapped accounts
       const allLfTransactions: LunchFlowTransaction[] = [];
       const accountResults: { account: string; postedCount: number; pendingCount: number; success: boolean }[] = [];
@@ -318,16 +315,10 @@ export class LunchFlowImporter {
 
     const reconcileSpinner = this.ui.showSpinner('Reconciling account balances...');
     try {
-      // Re-fetch AB accounts to get post-import balances
-      const abAccounts = await this.abClient.getAccounts();
       const today = new Date().toISOString().split('T')[0];
       const results: { account: string; adjusted: boolean; amount?: number }[] = [];
 
       for (const mapping of reconcileMappings) {
-        const abAccount = abAccounts.find(a => a.id === mapping.actualBudgetAccountId);
-
-        if (abAccount === undefined) continue;
-
         const lfBalance = await this.lfClient.getAccountBalance(mapping.lunchFlowAccountId);
 
         if (lfBalance === null) {
@@ -336,7 +327,7 @@ export class LunchFlowImporter {
         }
 
         const lfBalanceCents = Math.round(lfBalance * 100);
-        const abBalanceCents = Math.round(abAccount.balance * 100);
+        const abBalanceCents = await this.abClient.getAccountBalanceCents(mapping.actualBudgetAccountId);
         const diffCents = lfBalanceCents - abBalanceCents;
 
         if (Math.abs(diffCents) < 1) {
