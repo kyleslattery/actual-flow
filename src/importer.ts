@@ -327,16 +327,17 @@ export class LunchFlowImporter {
         }
 
         const lfBalanceCents = Math.round(lfBalance * 100);
-        const abBalanceCents = await this.abClient.getAccountBalanceCents(mapping.actualBudgetAccountId);
-        const diffCents = lfBalanceCents - abBalanceCents;
+        const adjAmount = await this.abClient.reconcileAccountBalance(
+          mapping.actualBudgetAccountId,
+          lfBalanceCents,
+          today
+        );
 
-        if (Math.abs(diffCents) < 1) {
+        if (adjAmount === null) {
           results.push({ account: mapping.actualBudgetAccountName, adjusted: false });
-          continue;
+        } else {
+          results.push({ account: mapping.actualBudgetAccountName, adjusted: true, amount: adjAmount });
         }
-
-        await this.abClient.addBalanceAdjustment(mapping.actualBudgetAccountId, diffCents, today);
-        results.push({ account: mapping.actualBudgetAccountName, adjusted: true, amount: diffCents });
       }
 
       reconcileSpinner.stop();
