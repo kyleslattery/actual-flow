@@ -4,7 +4,7 @@ import { TransactionMapper } from './transaction-mapper';
 import { ConfigManager } from './config-manager';
 import { TerminalUI } from './ui';
 import { DuplicateTransactionDetector } from './duplicate-detector';
-import { Config, AccountMapping, ConnectionStatus, LunchFlowTransaction, LunchFlowAccount } from './types';
+import { Config, AccountMapping, ConnectionStatus, LunchFlowTransaction } from './types';
 import chalk from 'chalk';
 import Table from 'cli-table3';
 
@@ -293,7 +293,7 @@ export class LunchFlowImporter {
       const accountCount = new Set(cleanTransactions.map(t => t.account)).size;
       this.ui.showSuccess(`Successfully imported ${cleanTransactions.length} transactions across ${accountCount} account(s)`);
 
-      await this.reconcileBalances(this.config.accountMappings, lfAccounts);
+      await this.reconcileBalances(this.config.accountMappings);
 
       // Show duplicate summary if any were found
       if (this.config.actualBudget.duplicateCheckingAcrossAccounts) {
@@ -312,10 +312,7 @@ export class LunchFlowImporter {
     }
   }
 
-  private async reconcileBalances(
-    mappings: AccountMapping[],
-    lfAccounts: LunchFlowAccount[]
-  ): Promise<void> {
+  private async reconcileBalances(mappings: AccountMapping[]): Promise<void> {
     const reconcileMappings = mappings.filter(m => m.reconcileBalance);
     if (reconcileMappings.length === 0) return;
 
@@ -327,17 +324,18 @@ export class LunchFlowImporter {
       const results: { account: string; adjusted: boolean; amount?: number }[] = [];
 
       for (const mapping of reconcileMappings) {
-        const lfAccount = lfAccounts.find(a => a.id === mapping.lunchFlowAccountId);
         const abAccount = abAccounts.find(a => a.id === mapping.actualBudgetAccountId);
 
-        if (!lfAccount || abAccount === undefined) continue;
+        if (abAccount === undefined) continue;
 
-        if (lfAccount.balance === undefined || lfAccount.balance === null) {
+        const lfBalance = await this.lfClient.getAccountBalance(mapping.lunchFlowAccountId);
+
+        if (lfBalance === null) {
           this.ui.showWarning(`No balance data from Lunch Flow for ${mapping.lunchFlowAccountName}, skipping reconciliation`);
           continue;
         }
 
-        const lfBalanceCents = Math.round(lfAccount.balance * 100);
+        const lfBalanceCents = Math.round(lfBalance * 100);
         const abBalanceCents = Math.round(abAccount.balance * 100);
         const diffCents = lfBalanceCents - abBalanceCents;
 

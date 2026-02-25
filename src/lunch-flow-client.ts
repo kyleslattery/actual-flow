@@ -95,6 +95,16 @@ export class LunchFlowClient {
     }, 'Fetch Lunch Flow accounts');
   }
 
+  async getAccountBalance(accountId: LunchFlowAccountId): Promise<number | null> {
+    return this.retryWithBackoff(async () => {
+      const response = await this.client.get(`/accounts/${accountId}/balance`);
+      if (typeof response.data.balance?.amount === 'number') {
+        return response.data.balance.amount;
+      }
+      return null;
+    }, `Fetch balance for account ${accountId}`);
+  }
+
   async getTransactions(accountId: LunchFlowAccountId, includePending: boolean = false): Promise<LunchFlowTransaction[]> {
     return this.retryWithBackoff(async () => {
       const params = includePending ? '?include_pending=true' : '';

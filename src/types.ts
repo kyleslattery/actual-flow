@@ -14,7 +14,6 @@ export interface LunchFlowAccount {
   id: LunchFlowAccountId;
   name: string;
   institution_name: string;
-  balance?: number;
 }
 
 export interface ActualBudgetTransaction {
