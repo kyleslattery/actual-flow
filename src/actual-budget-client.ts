@@ -192,16 +192,27 @@ export class ActualBudgetClient {
       await this.connect();
     }
 
-    await actualAPI.importTransactions(accountId, [{
-      date,
-      amount: adjustmentAmountCents,
-      imported_payee: 'Balance Adjustment',
-      payee_name: 'Balance Adjustment',
-      account: accountId,
-      cleared: true,
-      notes: 'Auto-generated balance adjustment',
-      imported_id: `balance-adj-${accountId}-${date}`,
-    }]);
+    const importedId = `balance-adj-${accountId}-${date}`;
+
+    // Check for an existing adjustment on this date and update it rather
+    // than letting importTransactions silently deduplicate (skip) it
+    const existing = await actualAPI.getTransactions(accountId, date, date);
+    const existingAdj = existing.find((t: any) => t.imported_id === importedId);
+
+    if (existingAdj) {
+      await actualAPI.updateTransaction(existingAdj.id, { amount: adjustmentAmountCents });
+    } else {
+      await actualAPI.importTransactions(accountId, [{
+        date,
+        amount: adjustmentAmountCents,
+        imported_payee: 'Balance Adjustment',
+        payee_name: 'Balance Adjustment',
+        account: accountId,
+        cleared: true,
+        notes: 'Auto-generated balance adjustment',
+        imported_id: importedId,
+      }]);
+    }
   }
 
   async listAvailableBudgets(): Promise<{ id: string; name: string }[]> {
