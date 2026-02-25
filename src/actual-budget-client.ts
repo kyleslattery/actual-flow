@@ -175,6 +175,27 @@ export class ActualBudgetClient {
     }
   }
 
+  async addBalanceAdjustment(
+    accountId: string,
+    adjustmentAmountCents: number,
+    date: string
+  ): Promise<void> {
+    if (!this.connected) {
+      await this.connect();
+    }
+
+    await actualAPI.importTransactions(accountId, [{
+      date,
+      amount: adjustmentAmountCents,
+      imported_payee: 'Balance Adjustment',
+      payee_name: 'Balance Adjustment',
+      account: accountId,
+      cleared: true,
+      notes: 'Auto-generated balance adjustment',
+      imported_id: `balance-adj-${accountId}-${date}`,
+    }]);
+  }
+
   async listAvailableBudgets(): Promise<{ id: string; name: string }[]> {
     try {
       // Ensure data directory exists

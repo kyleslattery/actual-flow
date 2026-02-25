@@ -14,6 +14,7 @@ export interface LunchFlowAccount {
   id: LunchFlowAccountId;
   name: string;
   institution_name: string;
+  balance?: number;
 }
 
 export interface ActualBudgetTransaction {
@@ -46,6 +47,7 @@ export interface AccountMapping {
   actualBudgetAccountName: string;
   syncStartDate?: string; // Optional sync start date in YYYY-MM-DD format
   includePending?: boolean;
+  reconcileBalance?: boolean;
 }
 
 export interface Config {

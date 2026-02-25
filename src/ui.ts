@@ -197,6 +197,16 @@ export class TerminalUI {
             },
           ]);
 
+          // Ask whether to auto-reconcile balance
+          const reconcileAnswer = await inquirer.prompt([
+            {
+              type: 'confirm',
+              name: 'reconcileBalance',
+              message: `Auto-reconcile balance for "${lfAccount.name}"? (creates adjustment transactions when balance drifts)`,
+              default: false,
+            },
+          ]);
+
           const mapping: AccountMapping = {
             lunchFlowAccountId: lfAccount.id,
             lunchFlowAccountName: lfAccount.name,
@@ -210,6 +220,10 @@ export class TerminalUI {
 
           if (pendingAnswer.includePending) {
             mapping.includePending = true;
+          }
+
+          if (reconcileAnswer.reconcileBalance) {
+            mapping.reconcileBalance = true;
           }
 
           mappings.push(mapping);
@@ -229,8 +243,8 @@ export class TerminalUI {
     }
 
     const table = new Table({
-      head: ['Lunch Flow Account', '→', 'Actual Budget Account', 'Sync Start', 'Pending'],
-      colWidths: [25, 3, 25, 12, 10],
+      head: ['Lunch Flow Account', '→', 'Actual Budget Account', 'Sync Start', 'Pending', 'Reconcile'],
+      colWidths: [25, 3, 25, 12, 10, 11],
       style: {
         head: ['cyan'],
         border: ['gray'],
@@ -243,7 +257,8 @@ export class TerminalUI {
         '→',
         mapping.actualBudgetAccountName,
         mapping.syncStartDate || chalk.gray('None'),
-        mapping.includePending ? chalk.green('Yes') : chalk.gray('No')
+        mapping.includePending ? chalk.green('Yes') : chalk.gray('No'),
+        mapping.reconcileBalance ? chalk.green('Yes') : chalk.gray('No'),
       ]);
     });
 

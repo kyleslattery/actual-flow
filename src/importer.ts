@@ -4,7 +4,7 @@ import { TransactionMapper } from './transaction-mapper';
 import { ConfigManager } from './config-manager';
 import { TerminalUI } from './ui';
 import { DuplicateTransactionDetector } from './duplicate-detector';
-import { Config, AccountMapping, ConnectionStatus, LunchFlowTransaction } from './types';
+import { Config, AccountMapping, ConnectionStatus, LunchFlowTransaction, LunchFlowAccount } from './types';
 import chalk from 'chalk';
 import Table from 'cli-table3';
 
@@ -147,10 +147,13 @@ export class LunchFlowImporter {
     const spinner = this.ui.showSpinner('Fetching transactions from all mapped accounts...');
 
     try {
+      // Fetch LF accounts once (needed for balance reconciliation)
+      const lfAccounts = await this.lfClient.getAccounts();
+
       // Fetch transactions from all mapped accounts
       const allLfTransactions: LunchFlowTransaction[] = [];
       const accountResults: { account: string; postedCount: number; pendingCount: number; success: boolean }[] = [];
-      
+
       for (const mapping of this.config.accountMappings) {
         try {
           const accountTransactions = await this.lfClient.getTransactions(
@@ -289,7 +292,9 @@ export class LunchFlowImporter {
 
       const accountCount = new Set(cleanTransactions.map(t => t.account)).size;
       this.ui.showSuccess(`Successfully imported ${cleanTransactions.length} transactions across ${accountCount} account(s)`);
-      
+
+      await this.reconcileBalances(this.config.accountMappings, lfAccounts);
+
       // Show duplicate summary if any were found
       if (this.config.actualBudget.duplicateCheckingAcrossAccounts) {
         const duplicateCount = abTransactions.length - uniqueTransactions.length;
@@ -304,6 +309,74 @@ export class LunchFlowImporter {
       if (throwOnError) {
         throw error;
       }
+    }
+  }
+
+  private async reconcileBalances(
+    mappings: AccountMapping[],
+    lfAccounts: LunchFlowAccount[]
+  ): Promise<void> {
+    const reconcileMappings = mappings.filter(m => m.reconcileBalance);
+    if (reconcileMappings.length === 0) return;
+
+    const reconcileSpinner = this.ui.showSpinner('Reconciling account balances...');
+    try {
+      // Re-fetch AB accounts to get post-import balances
+      const abAccounts = await this.abClient.getAccounts();
+      const today = new Date().toISOString().split('T')[0];
+      const results: { account: string; adjusted: boolean; amount?: number }[] = [];
+
+      for (const mapping of reconcileMappings) {
+        const lfAccount = lfAccounts.find(a => a.id === mapping.lunchFlowAccountId);
+        const abAccount = abAccounts.find(a => a.id === mapping.actualBudgetAccountId);
+
+        if (!lfAccount || abAccount === undefined) continue;
+
+        if (lfAccount.balance === undefined || lfAccount.balance === null) {
+          this.ui.showWarning(`No balance data from Lunch Flow for ${mapping.lunchFlowAccountName}, skipping reconciliation`);
+          continue;
+        }
+
+        const lfBalanceCents = Math.round(lfAccount.balance * 100);
+        const abBalanceCents = Math.round(abAccount.balance * 100);
+        const diffCents = lfBalanceCents - abBalanceCents;
+
+        if (Math.abs(diffCents) < 1) {
+          results.push({ account: mapping.actualBudgetAccountName, adjusted: false });
+          continue;
+        }
+
+        await this.abClient.addBalanceAdjustment(mapping.actualBudgetAccountId, diffCents, today);
+        results.push({ account: mapping.actualBudgetAccountName, adjusted: true, amount: diffCents });
+      }
+
+      reconcileSpinner.stop();
+
+      if (results.length > 0) {
+        console.log('\n📊 Balance Reconciliation Summary:');
+        const table = new Table({
+          head: ['Account', 'Adjustment'],
+          colWidths: [30, 20],
+        });
+
+        results.forEach(result => {
+          if (result.adjusted && result.amount !== undefined) {
+            const dollars = result.amount / 100;
+            const amountStr = dollars >= 0
+              ? chalk.green(`+$${dollars.toFixed(2)}`)
+              : chalk.red(`-$${Math.abs(dollars).toFixed(2)}`);
+            table.push([result.account, amountStr]);
+          } else {
+            table.push([result.account, chalk.gray('No adjustment')]);
+          }
+        });
+
+        console.log(table.toString());
+      }
+    } catch (error) {
+      reconcileSpinner.stop();
+      this.ui.showWarning('Balance reconciliation failed');
+      console.warn('Reconciliation error:', error);
     }
   }
 
