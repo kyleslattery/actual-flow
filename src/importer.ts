@@ -150,7 +150,7 @@ export class LunchFlowImporter {
     try {
       // Fetch transactions from all mapped accounts
       const allLfTransactions: LunchFlowTransaction[] = [];
-      const accountResults: { account: string; postedCount: number; pendingCount: number; success: boolean }[] = [];
+      const accountResults: { account: string; actualBudgetAccountId: string; postedCount: number; pendingCount: number; success: boolean }[] = [];
 
       for (const mapping of this.config.accountMappings) {
         try {
@@ -158,21 +158,22 @@ export class LunchFlowImporter {
             mapping.lunchFlowAccountId,
             mapping.includePending ?? false
           );
-          
+
           // Filter transactions by sync start date if specified
           let filteredTransactions = accountTransactions;
           if (mapping.syncStartDate) {
-            filteredTransactions = accountTransactions.filter(transaction => 
+            filteredTransactions = accountTransactions.filter(transaction =>
               transaction.date >= mapping.syncStartDate!
             );
           }
-          
+
           const pendingCount = filteredTransactions.filter(t => t.isPending).length;
           const postedCount = filteredTransactions.length - pendingCount;
-          
+
           allLfTransactions.push(...filteredTransactions);
           accountResults.push({
             account: `${mapping.lunchFlowAccountName} → ${mapping.actualBudgetAccountName}`,
+            actualBudgetAccountId: mapping.actualBudgetAccountId,
             postedCount,
             pendingCount,
             success: true
@@ -181,6 +182,7 @@ export class LunchFlowImporter {
           console.warn(`Failed to fetch transactions for Lunch Flow account ${mapping.lunchFlowAccountId} (${mapping.lunchFlowAccountName}):`, error);
           accountResults.push({
             account: `${mapping.lunchFlowAccountName} → ${mapping.actualBudgetAccountName}`,
+            actualBudgetAccountId: mapping.actualBudgetAccountId,
             postedCount: 0,
             pendingCount: 0,
             success: false
@@ -188,31 +190,8 @@ export class LunchFlowImporter {
           // Continue with other accounts even if one fails
         }
       }
-      
-      spinner.stop();
 
-      // Show account processing summary
-      console.log('\n📊 Account Processing Summary:');
-      const table = new Table({
-        head: ['Account Mapping', 'Sync Start', 'Posted', 'Pending', 'Status'],
-        colWidths: [40, 12, 10, 10, 12]
-      });
-      
-      accountResults.forEach((result, index) => {
-        const mapping = this.config!.accountMappings[index];
-        const pendingDisplay = mapping.includePending 
-          ? result.pendingCount.toString() 
-          : chalk.gray('N/A');
-        table.push([
-          result.account,
-          mapping.syncStartDate || 'None',
-          result.postedCount.toString(),
-          pendingDisplay,
-          result.success ? '✅ Success' : '❌ Failed'
-        ]);
-      });
-      
-      console.log(table.toString());
+      spinner.stop();
 
       if (allLfTransactions.length === 0) {
         this.ui.showInfo('No transactions found for any of the mapped accounts');
@@ -285,11 +264,31 @@ export class LunchFlowImporter {
       const cleanTransactions = uniqueTransactions.map(({ isDuplicate, duplicateOf, isPending, ...transaction }) => transaction);
 
       const importSpinner = this.ui.showSpinner(`Importing ${cleanTransactions.length} transactions...`);
-      await this.abClient.importTransactions(cleanTransactions);
+      const importResult = await this.abClient.importTransactions(cleanTransactions);
       importSpinner.stop();
 
-      const accountCount = new Set(cleanTransactions.map(t => t.account)).size;
-      this.ui.showSuccess(`Successfully imported ${cleanTransactions.length} transactions across ${accountCount} account(s)`);
+      // Show per-account summary with actual imported counts
+      console.log('\n📊 Import Summary:');
+      const summaryTable = new Table({
+        head: ['Account Mapping', 'Sync Start', 'Fetched', 'Added', 'Updated'],
+        colWidths: [40, 12, 10, 8, 10],
+      });
+
+      accountResults.forEach((result, index) => {
+        const mapping = this.config!.accountMappings[index];
+        const accountImport = importResult.byAccount.get(result.actualBudgetAccountId);
+        const added = accountImport?.added ?? 0;
+        const updated = accountImport?.updated ?? 0;
+        summaryTable.push([
+          result.account,
+          mapping.syncStartDate || chalk.gray('None'),
+          result.success ? result.postedCount.toString() : chalk.red('Failed'),
+          added > 0 ? chalk.green(added.toString()) : chalk.gray('0'),
+          updated > 0 ? chalk.yellow(updated.toString()) : chalk.gray('0'),
+        ]);
+      });
+
+      console.log(summaryTable.toString());
 
       await this.reconcileBalances(this.config.accountMappings);
 
