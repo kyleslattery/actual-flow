@@ -1,0 +1,39 @@
+FROM node:20-alpine
+
+LABEL maintainer="github.com/lunchflow"
+LABEL description="Actual Flow - Import bank transactions to Actual Budget via Lunch Flow (local build)"
+
+# Install dependencies
+RUN apk add --no-cache bash curl tini python3 make g++
+
+# Create app directory
+WORKDIR /app
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Install dependencies (skip prepare/build scripts)
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+# Rebuild native modules for the target platform
+RUN cd node_modules/.pnpm/better-sqlite3@12.5.0/node_modules/better-sqlite3 && npm run build-release
+
+# Copy source files and build
+COPY tsconfig.json ./
+COPY src/ ./src/
+RUN pnpm run build
+
+# Link the binary globally
+RUN npm link
+
+# Create directory for config
+RUN mkdir -p /app/config
+
+# Copy entrypoint script
+COPY docker/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Use tini as init system for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["/app/entrypoint.sh"]
