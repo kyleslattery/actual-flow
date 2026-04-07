@@ -1,13 +1,13 @@
 {
   "name": "@lunchflow/actual-flow",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "description": "Import transactions from Lunch Flow to Actual Budget with terminal UI.",
   "main": "./dist/index.js",
   "bin": {
     "actual-flow": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "esbuild src/index.ts --bundle --outdir=dist --platform=node --format=cjs --packages=external --sourcemap",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "prepare": "pnpm run build",
@@ -36,6 +36,7 @@
   "devDependencies": {
     "@types/inquirer": "^9.0.7",
     "@types/node": "^20.0.0",
+    "esbuild": "^0.28.0",
     "ts-node": "^10.9.0",
     "typescript": "^5.0.0"
   },

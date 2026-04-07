@@ -3,22 +3,7 @@ import { ActualBudgetTransaction, ActualBudgetAccount } from './types';
 import fs from 'fs';
 import path from 'path';
 
-async function withSuppressedLogs<T>(fn: () => Promise<T>): Promise<T> {
-  const noop = () => {};
-  const orig = { log: console.log, debug: console.debug, info: console.info, warn: console.warn };
-  console.log = noop;
-  console.debug = noop;
-  console.info = noop;
-  console.warn = noop;
-  try {
-    return await fn();
-  } finally {
-    console.log = orig.log;
-    console.debug = orig.debug;
-    console.info = orig.info;
-    console.warn = orig.warn;
-  }
-}
+const verbose = process.env.ACTUAL_BUDGET_VERBOSE !== '0';
 
 export class ActualBudgetClient {
   private serverUrl: string;
@@ -47,6 +32,7 @@ export class ActualBudgetClient {
         dataDir: this.dataDir,
         serverURL: this.serverUrl,
         password: this.serverPassword,
+        verbose,
       });
       
       // Download the budget to local cache with encryption support
@@ -176,27 +162,23 @@ export class ActualBudgetClient {
       let totalUpdated = 0;
       const byAccount = new Map<string, { added: number; updated: number }>();
 
-      // Import transactions for each account, suppressing verbose library output.
-      // Promises must be created inside withSuppressedLogs so the API calls
-      // start executing after suppression is already in place.
-      await withSuppressedLogs(async () => {
-        const importPromises = Array.from(transactionsByAccount.entries()).map(
-          async ([accountId, accountTransactions]) => {
-            try {
-              const result = await actualAPI.importTransactions(accountId, accountTransactions);
-              const added = result.added?.length ?? 0;
-              const updated = result.updated?.length ?? 0;
-              totalAdded += added;
-              totalUpdated += updated;
-              byAccount.set(accountId, { added, updated });
-            } catch (error: any) {
-              console.error(`Failed to import transactions to account ${accountId}:`, error.message);
-              throw new Error(`Failed to import transactions to account ${accountId}: ${error.message}`);
-            }
+      // Import transactions for each account
+      const importPromises = Array.from(transactionsByAccount.entries()).map(
+        async ([accountId, accountTransactions]) => {
+          try {
+            const result = await actualAPI.importTransactions(accountId, accountTransactions);
+            const added = result.added?.length ?? 0;
+            const updated = result.updated?.length ?? 0;
+            totalAdded += added;
+            totalUpdated += updated;
+            byAccount.set(accountId, { added, updated });
+          } catch (error: any) {
+            console.error(`Failed to import transactions to account ${accountId}:`, error.message);
+            throw new Error(`Failed to import transactions to account ${accountId}: ${error.message}`);
           }
-        );
-        await Promise.all(importPromises);
-      });
+        }
+      );
+      await Promise.all(importPromises);
       return { added: totalAdded, updated: totalUpdated, byAccount };
     } catch (error: any) {
       console.error('Failed to import transactions to Actual Budget:', error.message);
@@ -267,6 +249,7 @@ export class ActualBudgetClient {
         dataDir: this.dataDir,
         serverURL: this.serverUrl,
         password: this.serverPassword,
+        verbose,
       });
       
       const budgets = await actualAPI.getBudgets();

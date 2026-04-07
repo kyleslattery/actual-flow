@@ -17,7 +17,7 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # Rebuild native modules for the target platform
-RUN cd node_modules/.pnpm/better-sqlite3@12.5.0/node_modules/better-sqlite3 && npm run build-release
+RUN cd $(find node_modules/.pnpm -path '*/better-sqlite3/package.json' -exec dirname {} \; | head -1) && npm run build-release
 
 # Copy source files and build
 COPY tsconfig.json ./
