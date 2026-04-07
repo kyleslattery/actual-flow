@@ -22,6 +22,9 @@ actual-data/
 # Configuration
 config.json
 
+# Local-only Claude instructions
+CLAUDE.local.md
+
 # IDE
 .vscode/
 .idea/
