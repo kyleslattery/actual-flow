@@ -10,7 +10,7 @@ RUN apk add --no-cache bash curl tini python3 make g++
 WORKDIR /app
 
 # Install pnpm
-RUN npm install -g pnpm
+RUN npm install -g pnpm@10
 
 # Install dependencies (skip prepare/build scripts)
 COPY package.json pnpm-lock.yaml ./
