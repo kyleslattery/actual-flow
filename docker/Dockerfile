@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 LABEL maintainer="github.com/lunchflow"
 LABEL description="Actual Flow - Import bank transactions to Actual Budget via Lunch Flow"
